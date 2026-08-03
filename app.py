@@ -1,143 +1,126 @@
 import streamlit as st
-from PIL import Image, ImageDraw, ImageFilter
 import random
-import numpy as np
 
 # --- Configuración de la página ---
-st.set_page_config(page_title="Cala Studio - Generativo", layout="wide")
+st.set_page_config(page_title="Cala Studio - Generativo Vectorial", layout="wide")
 
-# --- Funciones Auxiliares del Motor ---
+# --- Funciones Auxiliares ---
 
 def generar_paleta(nombre_paleta):
-    """Retorna una lista de colores RGB basados en un tema."""
+    """Retorna colores en formato HEX para SVG."""
     if nombre_paleta == "Neon Hojas (image_1.png)":
-        return [
-            (50, 0, 100),   # Morado oscuro (fondo)
-            (150, 255, 0),  # Verde lima eléctrico
-            (200, 100, 255),# Rosa/Morado vibrante
-            (100, 150, 255) # Azul suave
-        ]
+        return ["#320064", "#96FF00", "#C864FF", "#6496FF"] # Fondo, formas...
     elif nombre_paleta == "Oceánico":
-        return [(10, 30, 60), (0, 100, 150), (100, 200, 255), (255, 255, 255)]
+        return ["#0A1E3C", "#006496", "#64C8FF", "#FFFFFF"]
     elif nombre_paleta == "Atardecer":
-        return [(50, 10, 10), (255, 80, 80), (255, 200, 100), (100, 0, 50)]
-    return [(0,0,0), (255,255,255)] # Default blanco y negro
+        return ["#320A0A", "#FF5050", "#FFC864", "#640032"]
+    return ["#000000", "#FFFFFF"]
 
-def aplicar_grano(imagen, cantidad_grano):
-    """Añade una textura granulada (ruido) a una imagen PIL."""
-    if cantidad_grano <= 0:
-        return imagen
-    
-    # Convertir PIL a numpy array
-    img_array = np.array(imagen)
-    
-    # Generar ruido Gaussiano
-    h, w, c = img_array.shape
-    ruido = np.random.normal(0, cantidad_grano * 2, (h, w, c)).astype('uint8')
-    
-    # Sumar el ruido a la imagen original (con clipping)
-    img_ruidosa_array = np.clip(img_array.astype('int16') + ruido.astype('int16'), 0, 255).astype('uint8')
-    
-    # Convertir de vuelta a PIL
-    return Image.fromarray(img_ruidosa_array)
+# --- Motor Generativo: ORGÁNICO VECTORIAL ---
 
-# --- Motor Generativo: ORGÁNICO V1 ---
-
-def motor_organico_v1(ancho, alto, num_formas, desenfoque, paleta, grano, semilla):
-    """Genera arte orgánico basado en formas difusas y ruido."""
-    # Seteamos la semilla aleatoria para repetibilidad
+def motor_organico_svg(ancho, alto, num_formas, desenfoque, paleta, grano, semilla):
+    """Genera código SVG nativo con formas, blur y ruido de turbulencia."""
     random.seed(semilla)
     
     colores = generar_paleta(paleta)
-    fondo_rgb = colores[0]
-    formas_rgb = colores[1:]
+    fondo_hex = colores[0]
+    formas_hex = colores[1:]
     
-    # 1. Crear lienzo base
-    canvas = Image.new('RGB', (ancho, alto), fondo_rgb)
+    # 1. Configurar los filtros SVG (Blur y Ruido)
+    # Convertimos la variable "grano" de Streamlit a un baseFrequency para el SVG
+    frecuencia_ruido = grano / 100.0 if grano > 0 else 0
+    opacidad_ruido = 0.15 if grano > 0 else 0
     
-    # 2. Crear una capa separada para dibujar las formas con transparencia (RGBA)
-    capa_formas = Image.new('RGBA', canvas.size, (0, 0, 0, 0))
-    dibujo = ImageDraw.Draw(capa_formas)
+    filtros = f"""
+    <defs>
+        <!-- Filtro de Desenfoque -->
+        <filter id="blur-filter" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="{desenfoque}" />
+        </filter>
+        
+        <!-- Filtro de Grano (Turbulencia) -->
+        <filter id="noise-filter">
+            <feTurbulence type="fractalNoise" baseFrequency="{frecuencia_ruido}" numOctaves="3" result="noise" />
+            <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 {opacidad_ruido} 0" in="noise" result="coloredNoise" />
+        </filter>
+    </defs>
+    """
+
+    # 2. Dibujar el fondo
+    elementos_svg = [f'<rect width="100%" height="100%" fill="{fondo_hex}" />']
     
-    # 3. Dibujar formas aleatorias
+    # 3. Dibujar las formas abstractas dentro de un grupo con el filtro de blur aplicado
+    elementos_svg.append(f'<g filter="url(#blur-filter)">')
+    
     for _ in range(num_formas):
-        # Elegimos color aleatorio (excluyendo el fondo)
-        color = random.choice(formas_rgb)
+        color = random.choice(formas_hex)
+        alfa = random.uniform(0.2, 0.6) # Opacidad en decimal para SVG
         
-        # Opacidad aleatoria baja (para la estética de sombra suave)
-        alfa = random.randint(30, 120) 
-        
-        # Geometría aleatoria para los "blobs" (manchas)
-        # Hacemos elipses irregulares
         radio_max = min(ancho, alto) // 2
-        radio_min = radio_max // 5
+        r1 = random.randint(radio_max // 5, radio_max)
+        r2 = random.randint(radio_max // 5, radio_max)
         
-        r1 = random.randint(radio_min, radio_max)
-        r2 = random.randint(radio_min, radio_max)
+        cx = random.randint(0, ancho)
+        cy = random.randint(0, alto)
         
-        x_centro = random.randint(0, ancho)
-        y_centro = random.randint(0, alto)
+        # Elipse SVG
+        forma = f'<ellipse cx="{cx}" cy="{cy}" rx="{r1}" ry="{r2}" fill="{color}" opacity="{alfa:.2f}" />'
+        elementos_svg.append(forma)
         
-        coordenadas = [
-            x_centro - r1, y_centro - r2,
-            x_centro + r1, y_centro + r2
-        ]
-        
-        # Dibujar elipse con alfa
-        dibujo.ellipse(coordenadas, fill=(color[0], color[1], color[2], alfa))
-
-    # 4. Mezclar lienzo y formas (Alpha Composite)
-    canvas.paste(capa_formas, (0, 0), capa_formas)
+    elementos_svg.append('</g>') # Cierra el grupo del blur
     
-    # 5. Aplicar Desenfoque Gaussiano (Estética de sombras)
-    if desenfoque > 0:
-        canvas = canvas.filter(ImageFilter.GaussianBlur(radius=desenfoque))
-        
-    # 6. Aplicar Grano (Textura)
-    canvas = aplicar_grano(canvas, grano)
-    
-    return canvas
+    # 4. Añadir capa de ruido por encima (si hay grano)
+    if grano > 0:
+        elementos_svg.append(f'<rect width="100%" height="100%" filter="url(#noise-filter)" style="mix-blend-mode: multiply;" pointer-events="none" />')
 
+    # 5. Ensamblar el SVG final
+    contenido_interno = "\n".join(elementos_svg)
+    svg_final = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {ancho} {alto}" width="100%" height="100%">
+    {filtros}
+    {contenido_interno}
+    </svg>"""
+    
+    return svg_final
 
 # --- Interfaz de Usuario en Streamlit ---
 
-st.title("👨‍🎨 Cala Generative Studio V1")
-st.write("Configura tu motor generativo orgánico en la barra lateral.")
+st.title("👨‍🎨 Cala Generative Studio V2 (Vectorial)")
+st.write("Tu motor ahora genera **SVG puros**, listos para impresión infinita.")
 
-# 1. Sidebar: Selección de Motor
-motor_actual = st.sidebar.selectbox("Seleccionar Motor", ["Motor Orgánico (V1)"])
+st.sidebar.header("🎛 Controles Orgánicos (SVG)")
 
-# 2. Sidebar: Controles Específicos del Motor Orgánico
-if motor_actual == "Motor Orgánico (V1)":
-    st.sidebar.header("🎛 Controles Orgánicos")
-    
-    # Semilla aleatoria (importante para regenerar el mismo diseño)
-    semilla = st.sidebar.number_input("Semilla Aleatoria", value=42, step=1)
-    
-    num_formas = st.sidebar.slider("Densidad de Formas (Sombras)", 5, 100, 25)
-    desenfoque = st.sidebar.slider("Nivel de Desenfoque (Suavizado)", 5, 200, 60)
-    grano = st.sidebar.slider("Textura de Grano", 0, 50, 15)
-    
-    paleta = st.sidebar.selectbox("Paleta de Color", [
-        "Neon Hojas (image_1.png)", 
-        "Oceánico", 
-        "Atardecer"
-    ])
-    
-    resolucion = st.sidebar.radio("Resolución de salida", ["Web (1200x800)", "HD (1920x1080)"])
+semilla = st.sidebar.number_input("Semilla Aleatoria", value=42, step=1)
+num_formas = st.sidebar.slider("Densidad de Formas", 5, 100, 25)
+desenfoque = st.sidebar.slider("Nivel de Desenfoque (SVG GaussianBlur)", 5, 200, 60)
+grano = st.sidebar.slider("Textura de Grano (SVG Turbulence)", 0, 50, 15)
 
-    # Extraer ancho y alto de la resolución
-    if "Web" in resolucion:
-        ancho, alto = 1200, 800
-    else:
-        ancho, alto = 1920, 1080
+paleta = st.sidebar.selectbox("Paleta de Color", [
+    "Neon Hojas (image_1.png)", 
+    "Oceánico", 
+    "Atardecer"
+])
 
-    # 3. Botón de Generación y Ejecución
-    if st.sidebar.button("Generar Diseño ✨"):
-        # Mostramos un spinner mientras cargamos
-        with st.spinner('Pintando píxeles...'):
-            # LLamamos al motor
-            imagen_final = motor_organico_v1(ancho, alto, num_formas, desenfoque, paleta, grano, semilla)
-            
-            # Mostramos el resultado
-            st.image(imagen_final, caption=f"Generación Orgánica {semilla}", use_column_width=True)
+# En vectores, la resolución base solo define la proporción (aspect ratio)
+proporcion = st.sidebar.radio("Proporción del lienzo", ["Horizontal (16:9)", "Cuadrado (1:1)", "Vertical (4:5)"])
+
+if "16:9" in proporcion:
+    ancho, alto = 1920, 1080
+elif "1:1" in proporcion:
+    ancho, alto = 1080, 1080
+else:
+    ancho, alto = 1080, 1350
+
+if st.sidebar.button("Generar Diseño Vectorial ✨"):
+    # Generamos el código de texto SVG
+    codigo_svg = motor_organico_svg(ancho, alto, num_formas, desenfoque, paleta, grano, semilla)
+    
+    # Renderizamos el SVG en Streamlit de forma segura
+    st.components.v1.html(codigo_svg, width=800, height=int(800 * (alto/ancho)))
+    
+    # Creamos un botón de descarga para el archivo .svg
+    st.download_button(
+        label="📥 Descargar Diseño en Alta Calidad (.SVG)",
+        data=codigo_svg,
+        file_name=f"cala_generativo_{semilla}.svg",
+        mime="image/svg+xml"
+    )
